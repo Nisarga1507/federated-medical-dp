@@ -1,27 +1,31 @@
+server:
+  name: meddp-fedavg-aggregator
+  host: 127.0.0.1
+  port: 8080
 federated:
-  server_address: "127.0.0.1:8080"
-  num_rounds: 3
+  server_address: 127.0.0.1:8080
+  num_rounds: 15
   min_clients: 2
-
 data:
-  spatial_size: [32, 32, 32]
+  spatial_size:
+  - 32
+  - 32
+  - 32
   in_channels: 2
   out_channels: 2
   samples_per_client:
     train: 12
     val: 4
     test: 4
-
 training:
-  epochs: 2
+  epochs: 6
   batch_size: 2
   learning_rate: 0.001
-
+  prob_threshold: 0.65
 privacy:
   enabled: true
   epsilon: 2.0
-  delta: 0.00001
+  delta: 1.0e-05
   max_grad_norm: 1.0
-
 artifacts:
-  output_dir: "artifacts"
+  output_dir: artifacts

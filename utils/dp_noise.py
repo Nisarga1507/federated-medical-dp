@@ -1,6 +1,23 @@
 import math
+from typing import Optional
 import torch
 import torch.nn as nn
+
+
+def compute_sigma(
+    epsilon: float,
+    delta: float = 1e-5,
+    max_grad_norm: float = 1.0,
+    batch_size: int = 1,
+    noise_multiplier: Optional[float] = None,
+) -> float:
+    safe_bs = max(int(batch_size), 1)
+    if noise_multiplier is not None:
+        return float(noise_multiplier) * float(max_grad_norm) / math.sqrt(safe_bs)
+    safe_eps = max(float(epsilon), 1e-6)
+    safe_delta = min(max(float(delta), 1e-12), 1.0 - 1e-12)
+    base_sigma = (float(max_grad_norm) * math.sqrt(2.0 * math.log(1.25 / safe_delta))) / safe_eps
+    return base_sigma / math.sqrt(safe_bs)
 
 
 def clip_and_add_dp_noise(
@@ -9,6 +26,8 @@ def clip_and_add_dp_noise(
     delta: float = 1e-5,
     max_grad_norm: float = 1.0,
     enabled: bool = True,
+    batch_size: int = 1,
+    noise_multiplier: Optional[float] = None,
 ) -> float:
     """
     Clips parameter gradients to `max_grad_norm` and injects Gaussian noise
@@ -19,14 +38,19 @@ def clip_and_add_dp_noise(
     if not grads:
         return 0.0
 
-    total_norm = torch.sqrt(sum(torch.sum(g.detach() ** 2) for g in grads)).item()
+    total_norm = float(torch.sqrt(sum(torch.sum(g.detach() ** 2) for g in grads)).item())
 
     if not enabled:
         return total_norm
 
-    clip_coef = min(1.0, max_grad_norm / (total_norm + 1e-6))
-    # Calibrated noise scale factor for (epsilon, delta)-Gaussian mechanism
-    sigma = (max_grad_norm * math.sqrt(2.0 * math.log(1.25 / delta))) / max(epsilon, 1e-6)
+    clip_coef = min(1.0, float(max_grad_norm) / (total_norm + 1e-6))
+    sigma = compute_sigma(
+        epsilon=epsilon,
+        delta=delta,
+        max_grad_norm=max_grad_norm,
+        batch_size=batch_size,
+        noise_multiplier=noise_multiplier,
+    )
 
     with torch.no_grad():
         for p in model.parameters():

@@ -1,0 +1,11 @@
+services:
+  diagnostic-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_HEADLESS=true
+    volumes:
+      - ./artifacts:/app/artifacts

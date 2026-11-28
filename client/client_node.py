@@ -99,6 +99,7 @@ class HospitalClient(fl.client.NumPyClient):
                     delta=self.delta,
                     max_grad_norm=self.max_grad_norm,
                     enabled=self.dp_enabled,
+                    batch_size=int(images.shape[0]),
                 )
                 self.optimizer.step()
                 last_loss = float(loss.item())
