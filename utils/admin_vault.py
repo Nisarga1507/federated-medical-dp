@@ -196,31 +196,38 @@ def list_enrolled_admins(vault_dir: Path = DEFAULT_VAULT_DIR) -> List[Dict[str, 
 
 
 def _record_staff_audit(
-    staff_member: Dict[str, Any],
-    event_type: str,
-    timestamp_iso: str,
-    shift_time: str = "",
-    capture_path: str = "",
-    vault_dir: Path = DEFAULT_VAULT_DIR,
-) -> None:
+    staff_member,
+    event_type,
+    timestamp_iso,
+    shift_time="",
+    capture_path=None,
+    vault_dir=DEFAULT_VAULT_DIR,
+    branch_name=None,
+    pose_name=None,
+):
     vault_dir.mkdir(parents=True, exist_ok=True)
     audit_path = vault_dir / "staff_audit_events.json"
-    events: List[Dict[str, Any]] = []
+    events = []
     if audit_path.exists():
+        import json
         events = json.loads(audit_path.read_text(encoding="utf-8"))
-
-    entry: Dict[str, Any] = {
-        "event": event_type,
-        "staff_role": staff_member.get("role_label", staff_member.get("id", "Staff")),
-        "staff_name": staff_member.get("name", "Staff"),
-        "staff_email": staff_member.get("email", ""),
-        "shift_time": shift_time or staff_member.get("shift_time", ""),
-        "timestamp_utc": timestamp_iso,
-        "arrival_capture_path": capture_path or staff_member.get("arrival_capture_path", ""),
-    }
-    events.append(entry)
+    resolved_branch = (branch_name or staff_member.get("branch") or "").strip()
+    resolved_pose = (pose_name or staff_member.get("pose_name") or "Captured Pose").strip()
+    events.append(
+        {
+            "event": event_type,
+            "staff_role": staff_member.get("role_label", "Staff"),
+            "staff_name": staff_member.get("name", ""),
+            "staff_email": staff_member.get("email", ""),
+            "branch": resolved_branch,
+            "shift_time": shift_time or staff_member.get("shift_time", ""),
+            "pose_name": resolved_pose,
+            "timestamp_utc": timestamp_iso,
+            "arrival_capture_path": capture_path or f"sha256:{staff_member.get('pose_digest_sha256_16', '')}",
+        }
+    )
+    import json
     audit_path.write_text(json.dumps(events, indent=2), encoding="utf-8")
-
 
 def login_staff_member(
     staff_slot: str,
@@ -230,6 +237,7 @@ def login_staff_member(
     capture_image_bytes: Optional[bytes] = None,
     vault_dir: Path = DEFAULT_VAULT_DIR,
     branch_name: str = "Branch 1 - North Imaging Hub",
+    pose_name: str = "Hand Pose Capture",
 ) -> Tuple[bool, Optional[Dict[str, Any]], str]:
     """
     Signs in an Employee (Staff 1 / Staff 2) with Name, Mail ID, 6-hour Shift (AM/PM),
@@ -243,6 +251,7 @@ def login_staff_member(
     clean_email = (staff_email or "").strip().lower()
     clean_shift = (shift_time or "").strip()
     clean_branch = (branch_name or "").strip()
+    clean_pose_name = (pose_name or "Hand Pose Capture").strip() or "Hand Pose Capture"
 
     if not clean_name:
         return False, None, "Enter Employee Name first."
@@ -274,6 +283,7 @@ def login_staff_member(
         "name": clean_name,
         "email": clean_email,
         "branch": clean_branch,
+        "pose_name": clean_pose_name,
         "shift_time": clean_shift,
         "pose_verified": True,
         "pose_digest_sha256_16": pose_digest,
@@ -305,6 +315,8 @@ def login_staff_member(
         shift_time=f"{clean_branch} | {clean_shift}",
         capture_path=f"sha256:{pose_digest}",
         vault_dir=vault_dir,
+        branch_name=clean_branch,
+        pose_name=clean_pose_name,
     )
     return (
         True,
@@ -586,8 +598,8 @@ def verify_admin_face_and_pose(
     face_image_bytes: bytes,
     pose_image_bytes: bytes,
     login_email: Optional[str] = None,
-    face_threshold: float = 0.75,
-    pose_threshold: float = 0.55,
+    face_threshold: float = 0.65,
+    pose_threshold: float = 0.40,
     vault_dir: Path = DEFAULT_VAULT_DIR,
 ) -> Tuple[bool, Optional[Dict[str, Any]], str]:
     admins = _load_admins_meta(vault_dir)
@@ -776,3 +788,82 @@ def load_audit_events(
     if not audit_path.exists():
         return []
     return json.loads(audit_path.read_text(encoding="utf-8"))
+
+
+def build_paired_staff_sessions(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Pairs employee login and logout events into per-session rows with branch,
+    shift window, named hand pose, timestamps, and computed session duration.
+    """
+    from datetime import datetime
+
+    def _parse_iso(ts: str) -> Optional[datetime]:
+        try:
+            return datetime.fromisoformat(ts)
+        except Exception:
+            return None
+
+    def _infer_branch(ev: Dict[str, Any]) -> str:
+        if ev.get("branch"):
+            return str(ev["branch"])
+        st_val = str(ev.get("shift_time", ""))
+        if "|" in st_val:
+            return st_val.split("|", 1)[0].strip()
+        return "Unassigned Branch"
+
+    def _infer_shift(ev: Dict[str, Any]) -> str:
+        st_val = str(ev.get("shift_time", ""))
+        if "|" in st_val:
+            return st_val.split("|", 1)[1].strip()
+        return st_val
+
+    open_by_key: Dict[str, Dict[str, Any]] = {}
+    paired_rows: List[Dict[str, Any]] = []
+
+    for ev in events or []:
+        etype = str(ev.get("event", "")).lower()
+        key = str(ev.get("staff_email", "")).strip().lower() or str(ev.get("staff_name", ""))
+        ts_raw = str(ev.get("timestamp_utc", ""))
+        dt_obj = _parse_iso(ts_raw)
+        branch_val = _infer_branch(ev)
+        shift_val = _infer_shift(ev)
+        pose_val = str(ev.get("pose_name") or "Captured Pose")
+
+        if etype == "login":
+            row: Dict[str, Any] = {
+                "employee_name": ev.get("staff_name", "Staff"),
+                "employee_email": ev.get("staff_email", ""),
+                "branch": branch_val,
+                "shift_window": shift_val,
+                "hand_pose_name": pose_val,
+                "login_time_utc": ts_raw,
+                "logout_time_utc": "ACTIVE (Still Signed In)",
+                "duration_minutes": None,
+                "pose_digest": ev.get("arrival_capture_path", ""),
+                "_login_dt": dt_obj,
+            }
+            paired_rows.append(row)
+            open_by_key[key] = row
+        elif etype == "logout":
+            target = open_by_key.pop(key, None)
+            if target is not None:
+                target["logout_time_utc"] = ts_raw
+                if target.get("_login_dt") and dt_obj:
+                    target["duration_minutes"] = round((dt_obj - target["_login_dt"]).total_seconds() / 60.0, 2)
+            else:
+                paired_rows.append(
+                    {
+                        "employee_name": ev.get("staff_name", "Staff"),
+                        "employee_email": ev.get("staff_email", ""),
+                        "branch": branch_val,
+                        "shift_window": shift_val,
+                        "hand_pose_name": pose_val,
+                        "login_time_utc": "—",
+                        "logout_time_utc": ts_raw,
+                        "duration_minutes": None,
+                        "pose_digest": ev.get("arrival_capture_path", ""),
+                        "_login_dt": None,
+                    }
+                )
+
+    return [{k: v for k, v in r.items() if k != "_login_dt"} for r in paired_rows]

@@ -294,42 +294,21 @@ if st.session_state["dash_step"] == 1:
                     st.error(msg_emp)
 
         with adm_col:
-            st.markdown('<div class="section-banner">Admin Sign In (Mail ID + 5-Char OTP + Hand Pose)</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-banner">Admin Sign In (Face + Hand Pose Only)</div>', unsafe_allow_html=True)
             if active_lock is not None:
                 st.warning(f"Active Admin Lock: {active_lock.get('name')} ({active_lock.get('email')}).")
 
             if is_admin_enrolled():
-                adm_email = st.text_input("Admin Mail ID *", value="nisargahsn15@gmail.com", key="d1_adm_email")
-                if st.button("Send 5-Char OTP"):
-                    ok_otp, _, msg_otp = generate_and_send_login_otp(adm_email)
-                    if ok_otp:
-                        st.session_state["otp_verified_email"] = None
-                        st.success(msg_otp)
-                    else:
-                        st.error(msg_otp)
-
-                adm_otp = st.text_input("Enter 5-Char OTP", max_chars=5, placeholder="5-character code", key="d1_adm_otp")
-                if st.button("Verify OTP"):
-                    ok_v, msg_v = verify_login_otp(adm_email, adm_otp)
-                    if ok_v:
-                        st.session_state["otp_verified_email"] = adm_email.strip().lower()
-                        st.success(msg_v)
-                    else:
-                        st.session_state["otp_verified_email"] = None
-                        st.error(msg_v)
-
                 adm_face_cam = st.camera_input("Admin Face Capture", key="d1_adm_face")
                 adm_pose_cam = st.camera_input("Admin Hand Pose Capture *", key="d1_adm_pose")
                 if st.button("Complete Admin Sign In", type="primary"):
-                    if st.session_state.get("otp_verified_email") != adm_email.strip().lower():
-                        st.error("Verify your 5-character OTP first.")
-                    elif adm_face_cam is None or adm_pose_cam is None:
+                    if adm_face_cam is None or adm_pose_cam is None:
                         st.error("Capture both Admin Face and Admin Hand Pose photos.")
                     else:
                         v_ok, matched_adm, v_msg = verify_admin_face_and_pose(
                             face_image_bytes=adm_face_cam.getvalue(),
                             pose_image_bytes=adm_pose_cam.getvalue(),
-                            login_email=adm_email,
+                            login_email=None,
                         )
                         if v_ok and matched_adm is not None:
                             st.session_state["admin_unlocked"] = True

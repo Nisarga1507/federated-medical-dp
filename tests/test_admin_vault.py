@@ -110,3 +110,46 @@ def test_staff_shift_ampm_login_capture_patient_result_and_admin_complete_view(t
     staff_events = load_staff_audit_events(is_admin_unlocked=True, vault_dir=tmp_path)
     assert [e["event"] for e in staff_events] == ["login", "logout"]
     assert staff_events[0]["arrival_capture_path"].startswith("sha256:")
+
+
+def test_named_hand_pose_and_paired_session_duration(tmp_path) -> None:
+    from pathlib import Path
+    from utils.admin_vault import (
+        build_paired_staff_sessions,
+        load_staff_audit_events,
+        login_staff_member,
+        logout_staff_session,
+    )
+
+    ok, sess, _ = login_staff_member(
+        staff_slot="Staff 1",
+        staff_name="Nisha Nair",
+        staff_email="nisha@clinic.org",
+        shift_time="06:00 AM - 12:00 PM",
+        capture_image_bytes=_make_sample_jpg(64),
+        vault_dir=tmp_path,
+        branch_name="Branch 1 - North Imaging Hub",
+        pose_name="Thumbs Up",
+    )
+    assert ok and sess is not None
+    assert sess["pose_name"] == "Thumbs Up"
+
+    logout_staff_session(
+        staff_email="nisha@clinic.org",
+        staff_name="Nisha Nair",
+        staff_role="Staff 1",
+        shift_time="Branch 1 - North Imaging Hub | 06:00 AM - 12:00 PM",
+        capture_path="sha256:abcdef1234567890",
+        vault_dir=tmp_path,
+    )
+
+    events = load_staff_audit_events(is_admin_unlocked=True, vault_dir=tmp_path)
+    assert events[0]["pose_name"] == "Thumbs Up"
+    assert events[0]["branch"] == "Branch 1 - North Imaging Hub"
+
+    paired = build_paired_staff_sessions(events)
+    assert len(paired) == 1
+    assert paired[0]["hand_pose_name"] == "Thumbs Up"
+    assert paired[0]["branch"] == "Branch 1 - North Imaging Hub"
+    assert paired[0]["duration_minutes"] is not None
+    assert paired[0]["duration_minutes"] >= 0.0
