@@ -24,13 +24,6 @@ Evaluated via `scripts/run_privacy_ablation.py` across `client_1` and `client_2`
 - **Single-Scan Diagnostic Reference (`data/client_2/test/case_000.npz`, Slice 16):** Achieves `0.7766` 3D Dice with `2.18%` predicted foreground and `7.83%` mean lesion probability.
 - **Privacy–Utility Takeaway:** Tightening the differential privacy budget from `ε = 10.0` to `ε = 2.0` substantially increases gradient noise relative to fine 3D lesion boundaries, directly illustrating why clinical federated deployments must balance formal privacy guarantees against segmentation sensitivity.
 
-## Privacy-Preserving Biometric RBAC & Operational Monitoring
-
-- **Zero Raw Camera Frame Persistence:** Admin face and hand-pose captures are converted in memory into normalized embeddings (`admin_signatures.npz`), while employee hand-pose logins record named gesture labels (`pose_name`) and SHA-256 digests (`sha256:<16-hex>`) in `staff_audit_events.json`.
-- **Paired Branch & Shift Duration Analytics:** `build_paired_staff_sessions` in `utils/admin_vault.py` pairs employee login and logout events across 6 clinical branches and 6-hour AM/PM shifts to compute session durations (`duration_minutes`), surface active sessions, and filter audit trails by branch or named hand pose in Dashboard 3 (Admin Vault).
-- **Security & Privacy Threat Model:** Full trust-boundary analysis, adversary assumptions, and residual-risk mitigations are documented in `docs/THREAT_MODEL.md` and `THREAT_MODEL_AND_NEXT_STEPS.md`.
-- **Operational Telemetry:** `utils/monitoring.py` (`summarize_operational_health`) tracks active clinical sessions, mean 3D Dice, low-Dice drift alerts, and p95 inference latency.
-
 ## How to Run (End-to-End)
 
 ### 1. Environment & Dependencies
